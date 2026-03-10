@@ -1,0 +1,1881 @@
+```html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>モンスターマスターへの道 DX</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0b1020;
+      color: #fff;
+      font-family: "Meiryo", "Yu Gothic", sans-serif;
+      touch-action: manipulation;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+    #wrap {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 8px 0;
+      box-sizing: border-box;
+    }
+    canvas {
+      width: min(100vw, 760px);
+      height: auto;
+      background: #111827;
+      border-radius: 12px;
+      box-shadow: 0 0 24px rgba(0,0,0,.35);
+      image-rendering: auto;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="960" height="800"></canvas>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  const W = 960;
+  const H = 800;
+  const TILE = 48;
+  const MAP_W = 20;
+  const MAP_H = 12;
+  const MAP_PIX_H = MAP_H * TILE;
+  const UI_Y = MAP_PIX_H;
+
+  const GRASS = "G";
+  const WALL = "#";
+  const HEAL = "H";
+
+  const TYPE_ADV = {
+    "炎>草": 1.5,
+    "草>水": 1.5,
+    "水>炎": 1.5,
+    "雷>水": 1.5,
+    "土>雷": 1.5,
+    "草>土": 1.5,
+    "炎>土": 0.75,
+    "水>草": 0.75,
+    "草>炎": 0.75,
+    "炎>水": 0.75,
+    "雷>土": 0.75,
+  };
+
+  const ELEM_COLOR = {
+    "炎": "#f36b3f",
+    "草": "#59b95c",
+    "水": "#5da3ff",
+    "雷": "#f6db58",
+    "土": "#b88752",
+  };
+
+  const SPECIES = {
+    "フレアット": {
+      species: "フレアット", element: "炎", level: 5, maxHp: 36, hp: 36, atk: 13, def: 9, spd: 11, color: "#ec7452", catchRate: 0.45,
+      skills: [{name:"ひのこづき",power:10,element:"炎",acc:1.0},{name:"ブレイズタックル",power:13,element:"炎",acc:0.9}]
+    },
+    "リーフィン": {
+      species: "リーフィン", element: "草", level: 5, maxHp: 38, hp: 38, atk: 11, def: 11, spd: 10, color: "#65bc5c", catchRate: 0.45,
+      skills: [{name:"つるうち",power:9,element:"草",acc:1.0},{name:"リーフカッター",power:12,element:"草",acc:0.95}]
+    },
+    "アクアロン": {
+      species: "アクアロン", element: "水", level: 5, maxHp: 37, hp: 37, atk: 12, def: 10, spd: 10, color: "#5997eb", catchRate: 0.45,
+      skills: [{name:"しぶきアタック",power:9,element:"水",acc:1.0},{name:"みずショット",power:12,element:"水",acc:0.95}]
+    },
+    "ボルニャ": {
+      species: "ボルニャ", element: "雷", level: 4, maxHp: 31, hp: 31, atk: 13, def: 8, spd: 13, color: "#f8db4c", catchRate: 0.38,
+      skills: [{name:"スパーク",power:10,element:"雷",acc:1.0},{name:"でんこうアタック",power:13,element:"雷",acc:0.9}]
+    },
+    "モックル": {
+      species: "モックル", element: "土", level: 4, maxHp: 33, hp: 33, atk: 11, def: 10, spd: 8, color: "#a87446", catchRate: 0.40,
+      skills: [{name:"どろパンチ",power:10,element:"土",acc:1.0},{name:"ロックスマッシュ",power:12,element:"土",acc:0.9}]
+    },
+    "バブルン": {
+      species: "バブルン", element: "水", level: 4, maxHp: 32, hp: 32, atk: 10, def: 9, spd: 11, color: "#63c2e1", catchRate: 0.42,
+      skills: [{name:"バブル",power:9,element:"水",acc:1.0},{name:"アクアニードル",power:11,element:"水",acc:0.92}]
+    },
+    "モスリン": {
+      species: "モスリン", element: "草", level: 4, maxHp: 34, hp: 34, atk: 10, def: 11, spd: 9, color: "#69b062", catchRate: 0.42,
+      skills: [{name:"はっぱビート",power:9,element:"草",acc:1.0},{name:"からみつき",power:11,element:"草",acc:0.92}]
+    },
+    "エンバーグ": {
+      species: "エンバーグ", element: "炎", level: 6, maxHp: 42, hp: 42, atk: 14, def: 10, spd: 11, color: "#df5a36", catchRate: 0.28,
+      skills: [{name:"ファイアクロウ",power:12,element:"炎",acc:1.0},{name:"マグマバイト",power:15,element:"炎",acc:0.88}]
+    },
+    "サンドラ": {
+      species: "サンドラ", element: "土", level: 6, maxHp: 44, hp: 44, atk: 13, def: 12, spd: 8, color: "#b0804b", catchRate: 0.28,
+      skills: [{name:"すなあらし",power:11,element:"土",acc:1.0},{name:"グランドキック",power:14,element:"土",acc:0.9}]
+    },
+    "サンダリス": {
+      species: "サンダリス", element: "雷", level: 7, maxHp: 46, hp: 46, atk: 15, def: 11, spd: 14, color: "#f4e05d", catchRate: 0.24,
+      skills: [{name:"ボルトネイル",power:12,element:"雷",acc:1.0},{name:"ライトニングダッシュ",power:16,element:"雷",acc:0.88}]
+    },
+    "ネプシア": {
+      species: "ネプシア", element: "水", level: 8, maxHp: 52, hp: 52, atk: 16, def: 13, spd: 13, color: "#58a0f4", catchRate: 0.18,
+      skills: [{name:"タイダルウェーブ",power:14,element:"水",acc:1.0},{name:"しんかいのうた",power:17,element:"水",acc:0.9}]
+    },
+    "ブレイズル": {
+      species: "ブレイズル", element: "炎", level: 8, maxHp: 55, hp: 55, atk: 18, def: 12, spd: 14, color: "#ff6d42", catchRate: 0.20,
+      skills: [{name:"フレイムクロウ",power:14,element:"炎",acc:1.0},{name:"バーストラッシュ",power:18,element:"炎",acc:0.9}]
+    },
+    "グランリーフ": {
+      species: "グランリーフ", element: "草", level: 8, maxHp: 58, hp: 58, atk: 15, def: 15, spd: 12, color: "#4ea951", catchRate: 0.20,
+      skills: [{name:"リーフスラッシュ",power:14,element:"草",acc:1.0},{name:"フォレストブレード",power:18,element:"草",acc:0.9}]
+    },
+    "アクアリオン": {
+      species: "アクアリオン", element: "水", level: 8, maxHp: 56, hp: 56, atk: 16, def: 14, spd: 13, color: "#4f8cff", catchRate: 0.20,
+      skills: [{name:"スプラッシュファング",power:14,element:"水",acc:1.0},{name:"アビススピア",power:18,element:"水",acc:0.9}]
+    },
+    "ボルトラ": {
+      species: "ボルトラ", element: "雷", level: 8, maxHp: 50, hp: 50, atk: 19, def: 11, spd: 18, color: "#ffe253", catchRate: 0.18,
+      skills: [{name:"サンダーファング",power:15,element:"雷",acc:1.0},{name:"プラズマダイブ",power:19,element:"雷",acc:0.88}]
+    },
+    "ガイアル": {
+      species: "ガイアル", element: "土", level: 8, maxHp: 62, hp: 62, atk: 16, def: 16, spd: 10, color: "#8f643f", catchRate: 0.18,
+      skills: [{name:"アースクラッシュ",power:14,element:"土",acc:1.0},{name:"テラハンマー",power:18,element:"土",acc:0.88}]
+    }
+  };
+
+  const EVOLUTIONS = {
+    "フレアット": { level: 8, to: "ブレイズル" },
+    "リーフィン": { level: 8, to: "グランリーフ" },
+    "アクアロン": { level: 8, to: "アクアリオン" },
+    "ボルニャ": { level: 8, to: "ボルトラ" },
+    "モックル": { level: 8, to: "ガイアル" }
+  };
+
+  const STARTERS = ["フレアット", "リーフィン", "アクアロン"];
+
+  const STAGES = {
+    village: {
+      name: "はじまりの町",
+      map: [
+        "####################",
+        "#.......G......G...#",
+        "#..H....G..........#",
+        "#.......G.....G....#",
+        "#..........####....#",
+        "#..G...............#",
+        "#..G....####.......#",
+        "#.......#..#.......#",
+        "#.......#..#.......#",
+        "#...G..........G...#",
+        "#.............G....#",
+        "####################",
+      ],
+      playerStart: [2,2],
+      wild: ["モックル","モスリン","バブルン"],
+      portals: [
+        {pos:[18,5], to:"forest", toPos:[1,9], need:null, text:"東の森へ向かう。"}
+      ],
+      boss: null,
+      storyOnce: [
+        "長老『ようこそ、見習いテイマー。』",
+        "『モンスターマスターになる道は、3つの紋章を集めることだ。』",
+        "『翠の森、赤土の峡谷、蒼湖の祭壇。各地の守り手を越えよ。』",
+        "『3つそろえば、王都北のマスタータワーへの門が開く。』",
+        "『さあ、最初の相棒を選び、旅立ちなさい！』",
+      ],
+    },
+    forest: {
+      name: "翠の森",
+      map: [
+        "####################",
+        "#GGGGG....GGGGGG...#",
+        "#G....G...G....G.B.#",
+        "#G.GG.G...G.GG.G...#",
+        "#G.G..G...G.G..G...#",
+        "#G.G..GGGGG.G..GG..#",
+        "#G.G............G..#",
+        "#G.GGGGGGGGGGGG.G..#",
+        "#G..............G..#",
+        "#P..GGGGGGGGGG..G..#",
+        "#......H...........#",
+        "####################",
+      ],
+      playerStart: [1,9],
+      wild: ["モスリン","バブルン","ボルニャ"],
+      portals: [
+        {pos:[1,9], to:"village", toPos:[17,5], need:null, text:"町へ戻る。"},
+        {pos:[18,2], to:"canyon", toPos:[1,9], need:"翠の紋章", text:"森の奥の道がひらけた。"},
+      ],
+      boss: {
+        pos:[17,2],
+        trainer:"森の守り手 ミドリ",
+        monster:"エンバーグ",
+        crest:"翠の紋章",
+        intro:["ミドリ『草木の試練を越えられるかな？』"],
+        win:["ミドリ『見事だ。翠の紋章を授けよう。』"]
+      },
+      storyOnce:["森の奥には最初の守り手がいる。属性相性を考えて進もう。"]
+    },
+    canyon: {
+      name: "赤土の峡谷",
+      map: [
+        "####################",
+        "#P....G....####....#",
+        "#.####G....#..#....#",
+        "#....#G....#..#....#",
+        "#....#G....#..#..B.#",
+        "#....#G....#..#....#",
+        "#....#######..#....#",
+        "#....G.........#...#",
+        "#....G....H....#...#",
+        "#....G.........#...#",
+        "#..................#",
+        "####################",
+      ],
+      playerStart: [1,9],
+      wild: ["モックル","ボルニャ","フレアット"],
+      portals: [
+        {pos:[1,1], to:"forest", toPos:[18,2], need:null, text:"森へ戻る。"},
+        {pos:[18,4], to:"lake", toPos:[1,9], need:"赤土の紋章", text:"峡谷の先へ進める。"},
+      ],
+      boss: {
+        pos:[17,4],
+        trainer:"峡谷の守り手 ガンテツ",
+        monster:"サンドラ",
+        crest:"赤土の紋章",
+        intro:["ガンテツ『地を踏みしめる強さ、見せてみろ！』"],
+        win:["ガンテツ『その覚悟、本物だ。赤土の紋章を受け取れ！』"]
+      },
+      storyOnce:["2つ目の試練は土と雷の読み合いだ。"]
+    },
+    lake: {
+      name: "蒼湖の祭壇",
+      map: [
+        "####################",
+        "#P....GGGGGG.......#",
+        "#.....G....G.......#",
+        "#.....G.H..G.......#",
+        "#.....G....G.......#",
+        "#.....GGGGGG.......#",
+        "#..................#",
+        "#..######..######..#",
+        "#..#............#..#",
+        "#..#.........B..#.P#",
+        "#..#............#..#",
+        "####################",
+      ],
+      playerStart: [1,9],
+      wild: ["バブルン","リーフィン","ボルニャ"],
+      portals: [
+        {pos:[1,1], to:"canyon", toPos:[18,4], need:null, text:"峡谷へ戻る。"},
+        {pos:[18,9], to:"tower", toPos:[2,9], need:"蒼湖の紋章", text:"湖の門が開き、塔への道が現れた。"},
+      ],
+      boss: {
+        pos:[13,9],
+        trainer:"湖の守り手 セイラ",
+        monster:"サンダリス",
+        crest:"蒼湖の紋章",
+        intro:["セイラ『水面の先にある真実をつかんでみて。』"],
+        win:["セイラ『きみなら塔へ進める。蒼湖の紋章を託すわ。』"]
+      },
+      storyOnce:["最後の試練を越えれば、マスタータワーに挑める。"]
+    },
+    tower: {
+      name: "マスタータワー",
+      map: [
+        "####################",
+        "#..................#",
+        "#..##############..#",
+        "#..#............#..#",
+        "#..#............#..#",
+        "#..#.....B......#..#",
+        "#..#............#..#",
+        "#..#............#..#",
+        "#..######..######..#",
+        "#P.................#",
+        "#..............H...#",
+        "####################",
+      ],
+      playerStart: [2,9],
+      wild: [],
+      portals: [
+        {pos:[1,9], to:"village", toPos:[2,2], need:null, text:"町へ戻る。"}
+      ],
+      boss: {
+        pos:[9,5],
+        trainer:"現マスター レオ",
+        monster:"ネプシア",
+        crest:"マスター称号",
+        intro:["レオ『3つの紋章を持つ者よ、最後の試練だ。』","『勝てばお前が次のマスターだ。』"],
+        win:["レオ『見事だ……。今日からきみがモンスターマスターだ！』"]
+      },
+      storyOnce:["3つの紋章が共鳴し、マスタータワーの門が開いた。"]
+    }
+  };
+
+  function cloneMonster(name, levelBoost = 0) {
+    const src = SPECIES[name];
+    const m = JSON.parse(JSON.stringify(src));
+    if (levelBoost > 0) {
+      m.level += levelBoost;
+      m.maxHp += levelBoost * 3;
+      m.hp = m.maxHp;
+      m.atk += levelBoost;
+      m.def += levelBoost;
+      m.spd += Math.max(0, levelBoost - 1);
+    }
+    return m;
+  }
+
+  function typeMultiplier(atkType, defType) {
+    return TYPE_ADV[`${atkType}>${defType}`] || 1.0;
+  }
+
+  function rand(a, b) {
+    return Math.floor(Math.random() * (b - a + 1)) + a;
+  }
+
+  function chance(p) {
+    return Math.random() < p;
+  }
+
+  class AudioEngine {
+    constructor() {
+      this.ctx = null;
+      this.unlocked = false;
+      this.music = "";
+      this.step = 0;
+      this.nextTime = 0;
+      this.musicData = {
+        title: [[392,0.14],[523,0.14],[659,0.14],[784,0.18]],
+        field: [[294,0.16],[370,0.16],[440,0.16],[370,0.16],[330,0.16],[392,0.16]],
+        battle: [[220,0.10],[262,0.10],[330,0.10],[392,0.10],[494,0.10],[523,0.12]],
+        evolution: [[392,0.10],[440,0.10],[494,0.10],[523,0.10],[587,0.10],[659,0.14]],
+        ending: [[523,0.12],[659,0.12],[784,0.12],[1046,0.18],[784,0.12],[659,0.12]],
+      };
+    }
+    unlock() {
+      if (this.unlocked) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AC();
+        this.unlocked = true;
+        this.nextTime = this.ctx.currentTime;
+      } catch(e) {
+        this.unlocked = false;
+      }
+    }
+    beep(freq, dur = 0.08, type = "sine", vol = 0.03) {
+      if (!this.unlocked || !this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur);
+    }
+    seq(notes, type="square", vol=0.03) {
+      if (!this.unlocked || !this.ctx) return;
+      let t = this.ctx.currentTime;
+      for (const [freq, dur] of notes) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(vol, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + dur);
+        t += dur;
+      }
+    }
+    setMusic(name) {
+      if (!this.unlocked) return;
+      if (this.music !== name) {
+        this.music = name;
+        this.step = 0;
+        this.nextTime = this.ctx.currentTime;
+      }
+    }
+    update() {
+      if (!this.unlocked || !this.ctx || !this.musicData[this.music]) return;
+      const notes = this.musicData[this.music];
+      while (this.nextTime < this.ctx.currentTime + 0.18) {
+        const [freq, dur] = notes[this.step % notes.length];
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.02, this.nextTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, this.nextTime + dur);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(this.nextTime);
+        osc.stop(this.nextTime + dur);
+        this.nextTime += dur;
+        this.step++;
+      }
+    }
+    seMove() { this.beep(720, 0.03, "square", 0.02); }
+    seHit() { this.seq([[260,0.03],[180,0.06]], "square", 0.03); }
+    seFail() { this.seq([[392,0.08],[330,0.10]], "triangle", 0.025); }
+    seWin() { this.seq([[523,0.06],[659,0.06],[784,0.06],[1046,0.16]], "triangle", 0.03); }
+    seCatch() { this.seq([[523,0.05],[659,0.05],[784,0.12]], "triangle", 0.03); }
+    seEvolve() { this.seq([[523,0.05],[659,0.05],[784,0.05],[1046,0.2]], "triangle", 0.03); }
+    seFirework() { this.seq([[1046,0.03],[1318,0.03],[1568,0.04]], "square", 0.02); }
+    seElement(elem) {
+      if (elem === "炎") this.seq([[220,0.04],[300,0.04],[380,0.04]], "sawtooth", 0.025);
+      else if (elem === "水") this.seq([[420,0.04],[360,0.04],[320,0.04]], "triangle", 0.025);
+      else if (elem === "草") this.seq([[510,0.04],[540,0.04],[500,0.04]], "triangle", 0.022);
+      else if (elem === "雷") this.seq([[900,0.02],[700,0.02],[980,0.02],[720,0.02]], "square", 0.02);
+      else if (elem === "土") this.seq([[180,0.05],[160,0.05],[140,0.05]], "square", 0.025);
+    }
+  }
+
+  class Game {
+    constructor() {
+      this.audio = new AudioEngine();
+
+      this.state = "title";
+      this.stateAfterDialog = "starter";
+
+      this.party = [];
+      this.activeIndex = 0;
+      this.starterIndex = 0;
+
+      this.storySeen = new Set();
+      this.defeatedBosses = new Set();
+      this.crests = [];
+      this.gameCleared = false;
+
+      this.stageId = "village";
+      this.playerX = 2;
+      this.playerY = 2;
+      this.walkAnim = 0;
+
+      this.dialogQueue = [];
+      this.statusMessage = "画面をタップ / Enterで開始";
+      this.statusTimer = 0;
+
+      this.battle = null;
+      this.battleMode = "menu";
+      this.battleMenuIndex = 0;
+      this.moveMenuIndex = 0;
+      this.switchIndex = 0;
+
+      this.attackAnim = null;
+      this.postAttackCallback = null;
+      this.flashTimer = 0;
+      this.shakeTimer = 0;
+
+      this.evolution = null;
+      this.pendingAfterEvolution = null;
+
+      this.ending = null;
+
+      this.touchButtons = [];
+      this.optionButtons = [];
+      this.starterButtons = [];
+
+      this.lastTime = performance.now();
+
+      this.bindEvents();
+      requestAnimationFrame(this.loop.bind(this));
+    }
+
+    bindEvents() {
+      window.addEventListener("keydown", (e) => {
+        if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","Enter"].includes(e.key)) e.preventDefault();
+        this.audio.unlock();
+        this.handleKey(e);
+      }, {passive:false});
+
+      canvas.addEventListener("pointerdown", (e) => {
+        this.audio.unlock();
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * canvas.width / rect.width;
+        const y = (e.clientY - rect.top) * canvas.height / rect.height;
+        this.handlePointer(x, y);
+      });
+    }
+
+    currentStage() {
+      return STAGES[this.stageId];
+    }
+
+    currentMon() {
+      return this.party[this.activeIndex];
+    }
+
+    setStatus(text, timer = 180) {
+      this.statusMessage = text;
+      this.statusTimer = timer;
+    }
+
+    pushDialog(lines) {
+      this.dialogQueue.push(...lines);
+      this.state = "dialog";
+    }
+
+    objectiveText() {
+      if (this.gameCleared) return "目標達成: きみはモンスターマスターになった！";
+      if (this.crests.length === 0) return "目標: 翠の森で最初の守り手を倒し、翠の紋章を手に入れる";
+      if (this.crests.length === 1) return "目標: 赤土の峡谷で2つ目の紋章を手に入れる";
+      if (this.crests.length === 2) return "目標: 蒼湖の祭壇で最後の紋章を手に入れる";
+      return "目標: マスタータワーで現マスターを倒す";
+    }
+
+    refreshMusic() {
+      if (this.state === "title") this.audio.setMusic("title");
+      else if (this.state === "battle") this.audio.setMusic("battle");
+      else if (this.state === "evolution") this.audio.setMusic("evolution");
+      else if (this.state === "ending") this.audio.setMusic("ending");
+      else this.audio.setMusic("field");
+    }
+
+    enterStage(id, pos = null) {
+      const start = pos || this.currentStageStart(id);
+      this.stageId = id;
+      this.playerX = start[0];
+      this.playerY = start[1];
+      const stage = STAGES[id];
+      if (!this.storySeen.has(id) && stage.storyOnce) {
+        this.storySeen.add(id);
+        this.pushDialog(stage.storyOnce);
+        this.stateAfterDialog = "overworld";
+      }
+    }
+
+    currentStageStart(id) {
+      return STAGES[id].playerStart;
+    }
+
+    tileAt(x, y) {
+      return this.currentStage().map[y][x];
+    }
+
+    walkable(x, y) {
+      return this.tileAt(x, y) !== WALL;
+    }
+
+    healParty() {
+      for (const m of this.party) m.hp = m.maxHp;
+    }
+
+    movePlayer(dx, dy) {
+      const nx = this.playerX + dx;
+      const ny = this.playerY + dy;
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) return;
+      if (!this.walkable(nx, ny)) return;
+      this.playerX = nx;
+      this.playerY = ny;
+      this.walkAnim = 8;
+      this.audio.seMove();
+
+      if (this.tileAt(nx, ny) === HEAL && this.party.length) {
+        this.healParty();
+        this.setStatus("回復ポイントで全回復した！");
+      }
+
+      this.checkStageEvents();
+      if (this.state === "overworld") this.tryRandomBattle();
+    }
+
+    tryRandomBattle() {
+      const stage = this.currentStage();
+      if (this.tileAt(this.playerX, this.playerY) !== GRASS) return;
+      if (!stage.wild || !stage.wild.length) return;
+      if (chance(0.18)) {
+        const name = stage.wild[rand(0, stage.wild.length - 1)];
+        const boost = rand(0, Math.max(0, this.crests.length));
+        const enemy = cloneMonster(name, boost);
+        this.startBattle(enemy, null, true, null);
+      }
+    }
+
+    checkStageEvents() {
+      const stage = this.currentStage();
+      const boss = stage.boss;
+      if (boss && !this.defeatedBosses.has(this.stageId) && this.playerX === boss.pos[0] && this.playerY === boss.pos[1]) {
+        const enemy = cloneMonster(boss.monster, this.crests.length);
+        this.startBattle(enemy, boss.trainer, false, boss);
+        if (boss.intro) this.battle.pendingIntro = [...boss.intro];
+        return;
+      }
+      for (const p of stage.portals || []) {
+        if (this.playerX === p.pos[0] && this.playerY === p.pos[1]) {
+          if (p.need && !this.crests.includes(p.need)) {
+            this.setStatus(`${p.need} が必要だ。`);
+            return;
+          }
+          this.setStatus(p.text);
+          this.enterStage(p.to, p.toPos);
+          if (this.state !== "dialog") this.state = "overworld";
+          return;
+        }
+      }
+    }
+
+    startGameFromTitle() {
+      this.pushDialog([
+        "この世界で“モンスターマスター”と認められる者は、ただ強いだけではない。",
+        "相棒を信じ、3つの試練を越え、3つの紋章を集めた者だけがその名を継げる。",
+        "きみは今日、最初の相棒と出会い、その旅を始める。",
+      ]);
+      this.stateAfterDialog = "starter";
+    }
+
+    startBattle(enemy, enemyTrainer, canCapture, reward) {
+      if (!this.party.length) return;
+      this.battle = {
+        enemy,
+        enemyTrainer,
+        canCapture,
+        reward,
+        pendingIntro: []
+      };
+      this.battleMode = "menu";
+      this.battleMenuIndex = 0;
+      this.moveMenuIndex = 0;
+      this.switchIndex = this.activeIndex;
+      this.attackAnim = null;
+      this.postAttackCallback = null;
+      this.state = "battle";
+      if (enemyTrainer) this.setStatus(`${enemyTrainer} が 勝負をしかけてきた！`, 240);
+      else this.setStatus(`やせいの ${enemy.species} が あらわれた！`, 240);
+    }
+
+    attackText(mult) {
+      if (mult >= 1.4) return "こうかは ばつぐんだ！";
+      if (mult <= 0.8) return "こうかは いまひとつ...";
+      return "";
+    }
+
+    performAttack(attacker, defender, skill) {
+      if (Math.random() > skill.acc) {
+        return { text: `${attacker.species} の ${skill.name}！ しかし はずれた！`, hit: false, damage: 0, mult: 1 };
+      }
+      const mult = typeMultiplier(skill.element, defender.element);
+      const variance = rand(-2, 2);
+      let damage = Math.max(1, Math.floor(skill.power + attacker.atk - defender.def * 0.45 + variance));
+      damage = Math.max(1, Math.floor(damage * mult));
+      defender.hp = Math.max(0, defender.hp - damage);
+      let text = `${attacker.species} の ${skill.name}！ ${damage} ダメージ！`;
+      const eff = this.attackText(mult);
+      if (eff) text += " " + eff;
+      return { text, hit: true, damage, mult };
+    }
+
+    launchAttack(side, attacker, defender, skill, onFinish) {
+      const result = this.performAttack(attacker, defender, skill);
+      if (!result.hit) this.audio.seFail();
+      else {
+        this.audio.seHit();
+        this.audio.seElement(skill.element);
+      }
+      this.attackAnim = { side, skill, timer: 22, total: 22 };
+      this.postAttackCallback = onFinish;
+      this.flashTimer = 8;
+      this.shakeTimer = 8;
+      this.setStatus(result.text, 180);
+    }
+
+    finishAttackAnimation() {
+      const cb = this.postAttackCallback;
+      this.postAttackCallback = null;
+      this.attackAnim = null;
+      if (cb) cb();
+    }
+
+    findNextAliveIndex() {
+      for (let i = 0; i < this.party.length; i++) {
+        if (this.party[i].hp > 0) return i;
+      }
+      return -1;
+    }
+
+    gainVictoryRewards() {
+      const enemy = this.battle.enemy;
+      const mon = this.currentMon();
+      mon.level += 1;
+      mon.maxHp += 3;
+      mon.atk += 1;
+      mon.def += 1;
+      if (mon.level % 2 === 0) mon.spd += 1;
+      mon.hp = Math.min(mon.maxHp, mon.hp + 6);
+      this.audio.seWin();
+      this.setStatus(`${enemy.species} に勝利！ ${mon.species} は Lv${mon.level} になった！`, 240);
+    }
+
+    maybeStartEvolution(reward) {
+      const mon = this.currentMon();
+      const evo = EVOLUTIONS[mon.species];
+      if (!evo) return false;
+      if (mon.level < evo.level) return false;
+      this.evolution = {
+        old: JSON.parse(JSON.stringify(mon)),
+        newForm: cloneMonster(evo.to),
+        timer: 0,
+        done: false,
+        applied: false
+      };
+      this.pendingAfterEvolution = reward;
+      this.state = "evolution";
+      return true;
+    }
+
+    applyEvolution() {
+      if (!this.evolution || this.evolution.applied) return;
+      const mon = this.currentMon();
+      const nf = this.evolution.newForm;
+      const oldLevel = mon.level;
+      mon.species = nf.species;
+      mon.element = nf.element;
+      mon.color = nf.color;
+      mon.catchRate = nf.catchRate;
+      mon.skills = JSON.parse(JSON.stringify(nf.skills));
+      mon.maxHp = Math.max(mon.maxHp + 10, nf.maxHp + Math.max(0, oldLevel - nf.level) * 3);
+      mon.atk = Math.max(mon.atk + 3, nf.atk);
+      mon.def = Math.max(mon.def + 2, nf.def);
+      mon.spd = Math.max(mon.spd + 2, nf.spd);
+      mon.hp = Math.min(mon.maxHp, mon.hp + 10);
+      this.evolution.applied = true;
+      this.evolution.done = true;
+      this.audio.seEvolve();
+    }
+
+    finishEvolution() {
+      const reward = this.pendingAfterEvolution;
+      this.pendingAfterEvolution = null;
+      this.evolution = null;
+      if (reward && reward.crest === "マスター称号") {
+        this.startEnding();
+      } else {
+        this.beginPostBattleResolution(reward);
+      }
+    }
+
+    beginPostBattleResolution(reward) {
+      if (reward && reward.crest === "マスター称号") {
+        this.startEnding();
+        return;
+      }
+      const lines = [];
+      if (reward) {
+        lines.push(...(reward.win || []));
+      }
+      if (lines.length) {
+        this.pushDialog(lines);
+        this.stateAfterDialog = "overworld";
+      } else {
+        this.state = "overworld";
+      }
+    }
+
+    endBattleWin() {
+      const reward = this.battle.reward;
+      if (reward) {
+        this.defeatedBosses.add(this.stageId);
+        if (reward.crest !== "マスター称号" && !this.crests.includes(reward.crest)) {
+          this.crests.push(reward.crest);
+        }
+      }
+      this.gainVictoryRewards();
+      this.battle = null;
+      if (this.maybeStartEvolution(reward)) return;
+      this.beginPostBattleResolution(reward);
+    }
+
+    endBattleLose() {
+      this.healParty();
+      this.activeIndex = 0;
+      this.enterStage("village", [2,2]);
+      if (this.state !== "dialog") this.state = "overworld";
+      this.battle = null;
+      this.setStatus("力尽きた……。町へ戻され、相棒たちは回復した。", 280);
+    }
+
+    tryCatch() {
+      if (!this.battle.canCapture) {
+        this.setStatus("守り手のモンスターは つかまえられない！", 180);
+        this.enemyTurn();
+        return;
+      }
+      if (this.party.length >= 6) {
+        this.setStatus("パーティがいっぱいだ！（最大6体）", 180);
+        this.enemyTurn();
+        return;
+      }
+      const enemy = this.battle.enemy;
+      const hpFactor = 1 - (enemy.hp / enemy.maxHp);
+      let rate = enemy.catchRate + hpFactor * 0.45;
+      if (enemy.level <= this.currentMon().level) rate += 0.08;
+      if (Math.random() < Math.min(rate, 0.92)) {
+        this.party.push(JSON.parse(JSON.stringify(enemy)));
+        this.battle = null;
+        this.state = "overworld";
+        this.audio.seCatch();
+        this.setStatus(`やった！ ${enemy.species} を仲間にした！`, 240);
+      } else {
+        this.audio.seFail();
+        this.setStatus("おしい！ つかまえられなかった！", 180);
+        this.enemyTurn();
+      }
+    }
+
+    chooseSwitch() {
+      if (this.party[this.switchIndex].hp > 0) {
+        this.activeIndex = this.switchIndex;
+        this.battleMode = "menu";
+        this.setStatus(`ゆけっ！ ${this.currentMon().species}！`, 160);
+        this.enemyTurn();
+      } else {
+        this.setStatus("そのモンスターは戦えない。", 120);
+      }
+    }
+
+    enemyTurn(followUp = null) {
+      if (!this.battle) return;
+      const enemy = this.battle.enemy;
+      if (enemy.hp <= 0) return;
+      const player = this.currentMon();
+      const skill = enemy.skills[rand(0, enemy.skills.length - 1)];
+      this.launchAttack("enemy", enemy, player, skill, () => {
+        if (!this.battle) return;
+        const current = this.currentMon();
+        if (current.hp <= 0) {
+          const next = this.findNextAliveIndex();
+          if (next < 0) {
+            this.endBattleLose();
+            return;
+          }
+          this.activeIndex = next;
+          this.setStatus(`${this.currentMon().species} に交代した！`, 180);
+          this.battleMode = "menu";
+          return;
+        }
+        if (followUp) followUp();
+        else this.battleMode = "menu";
+      });
+    }
+
+    startEnding() {
+      this.state = "ending";
+      this.gameCleared = true;
+      this.ending = {
+        timer: 0,
+        fireworks: [],
+        confetti: [],
+        cta: false
+      };
+      for (let i = 0; i < 40; i++) this.spawnConfetti();
+    }
+
+    spawnFirework() {
+      if (!this.ending) return;
+      const cx = rand(120, W - 120);
+      const cy = rand(90, 260);
+      const colors = Object.values(ELEM_COLOR).concat(["#ffffff", "#ff90b0"]);
+      const color = colors[rand(0, colors.length - 1)];
+      const cluster = [];
+      for (let i = 0; i < 28; i++) {
+        const ang = Math.PI * 2 * i / 28;
+        const speed = 2.4 + Math.random() * 3;
+        cluster.push({
+          x: cx, y: cy,
+          vx: Math.cos(ang) * speed,
+          vy: Math.sin(ang) * speed,
+          life: rand(26, 40),
+          maxLife: 40,
+          color,
+          size: rand(2, 4)
+        });
+      }
+      this.ending.fireworks.push(cluster);
+      this.audio.seFirework();
+    }
+
+    spawnConfetti() {
+      if (!this.ending) return;
+      const colors = ["#ff9090", "#ffd760", "#7bc2ff", "#83e183", "#f4f4ff"];
+      this.ending.confetti.push({
+        x: rand(0, W),
+        y: rand(-40, 0),
+        vy: 1.2 + Math.random() * 2,
+        vx: -1 + Math.random() * 2,
+        rot: Math.random() * Math.PI * 2,
+        vr: -0.12 + Math.random() * 0.24,
+        size: rand(6, 11),
+        color: colors[rand(0, colors.length - 1)]
+      });
+    }
+
+    updateEnding() {
+      if (!this.ending) return;
+      this.ending.timer++;
+      const t = this.ending.timer;
+      if (t % 36 === 0 && this.ending.fireworks.length < 6) this.spawnFirework();
+      if (t % 10 === 0 && this.ending.confetti.length < 90) this.spawnConfetti();
+
+      for (const cluster of this.ending.fireworks) {
+        for (const p of cluster) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.04;
+          p.life--;
+        }
+      }
+      this.ending.fireworks = this.ending.fireworks.filter(cluster => cluster.some(p => p.life > 0));
+
+      for (const c of this.ending.confetti) {
+        c.x += c.vx;
+        c.y += c.vy;
+        c.rot += c.vr;
+        if (c.y > H + 20) {
+          c.y = rand(-40, 0);
+          c.x = rand(0, W);
+        }
+      }
+
+      if (t > 560) this.ending.cta = true;
+    }
+
+    update() {
+      this.refreshMusic();
+      this.audio.update();
+
+      if (this.statusTimer > 0) this.statusTimer--;
+      if (this.walkAnim > 0) this.walkAnim--;
+      if (this.flashTimer > 0) this.flashTimer--;
+      if (this.shakeTimer > 0) this.shakeTimer--;
+
+      if (this.state === "battle" && this.battle && this.battle.pendingIntro.length) {
+        const lines = [...this.battle.pendingIntro];
+        this.battle.pendingIntro = [];
+        this.pushDialog(lines);
+        this.stateAfterDialog = "battle";
+      }
+
+      if (this.attackAnim) {
+        this.attackAnim.timer--;
+        if (this.attackAnim.timer <= 0) this.finishAttackAnimation();
+      }
+
+      if (this.state === "evolution" && this.evolution) {
+        this.evolution.timer++;
+        if (this.evolution.timer === 30) {
+          this.setStatus(`おや…… ${this.evolution.old.species} の ようすが……！`, 240);
+        }
+        if (this.evolution.timer >= 120 && !this.evolution.applied) {
+          this.applyEvolution();
+          this.setStatus(`おめでとう！ ${this.evolution.old.species} は ${this.evolution.newForm.species} に進化した！`, 300);
+        }
+      }
+
+      if (this.state === "ending") {
+        this.updateEnding();
+      }
+    }
+
+    handleAction(action) {
+      if (this.state === "title") {
+        if (action === "ok") this.startGameFromTitle();
+        return;
+      }
+
+      if (this.state === "dialog") {
+        if (action === "ok" || action === "back") {
+          if (this.dialogQueue.length) this.dialogQueue.shift();
+          if (!this.dialogQueue.length) this.state = this.stateAfterDialog;
+        }
+        return;
+      }
+
+      if (this.state === "starter") {
+        if (action === "left") this.starterIndex = (this.starterIndex + STARTERS.length - 1) % STARTERS.length;
+        else if (action === "right") this.starterIndex = (this.starterIndex + 1) % STARTERS.length;
+        else if (action === "ok") {
+          this.party = [cloneMonster(STARTERS[this.starterIndex])];
+          this.activeIndex = 0;
+          this.enterStage("village", [2,2]);
+          if (this.state !== "dialog") this.state = "overworld";
+          this.setStatus(`${STARTERS[this.starterIndex]} と旅を始めた！`, 240);
+        }
+        return;
+      }
+
+      if (this.state === "overworld") {
+        if (action === "left") this.movePlayer(-1, 0);
+        else if (action === "right") this.movePlayer(1, 0);
+        else if (action === "up") this.movePlayer(0, -1);
+        else if (action === "down") this.movePlayer(0, 1);
+        else if (action === "party" && this.party.length) {
+          const alive = this.party.map((m, i) => m.hp > 0 ? i : -1).filter(v => v >= 0);
+          if (alive.length) {
+            const cur = alive.includes(this.activeIndex) ? alive.indexOf(this.activeIndex) : 0;
+            this.activeIndex = alive[(cur + 1) % alive.length];
+            this.setStatus(`先頭を ${this.currentMon().species} にした。`, 120);
+          }
+        }
+        return;
+      }
+
+      if (this.state === "battle") {
+        if (this.attackAnim || !this.battle) return;
+
+        if (this.battleMode === "menu") {
+          const options = ["たたかう", "つかまえる", "こうたい", "にげる"];
+          if (action === "up") this.battleMenuIndex = (this.battleMenuIndex + options.length - 1) % options.length;
+          else if (action === "down") this.battleMenuIndex = (this.battleMenuIndex + 1) % options.length;
+          else if (action === "ok") {
+            const choice = this.battleMenuIndex;
+            if (choice === 0) this.battleMode = "moves";
+            else if (choice === 1) this.tryCatch();
+            else if (choice === 2) {
+              this.battleMode = "switch";
+              this.switchIndex = this.activeIndex;
+            } else if (choice === 3) {
+              if (this.battle.enemyTrainer) {
+                this.setStatus("トレーナー戦からは逃げられない！", 180);
+                this.enemyTurn();
+              } else if (chance(0.75)) {
+                this.battle = null;
+                this.state = "overworld";
+                this.setStatus("うまく逃げきった！", 180);
+              } else {
+                this.setStatus("逃げられない！", 120);
+                this.enemyTurn();
+              }
+            }
+          }
+          return;
+        }
+
+        if (this.battleMode === "moves") {
+          const skills = this.currentMon().skills;
+          if (action === "up") this.moveMenuIndex = (this.moveMenuIndex + skills.length - 1) % skills.length;
+          else if (action === "down") this.moveMenuIndex = (this.moveMenuIndex + 1) % skills.length;
+          else if (action === "back") this.battleMode = "menu";
+          else if (action === "ok") {
+            const player = this.currentMon();
+            const enemy = this.battle.enemy;
+            const skill = player.skills[this.moveMenuIndex];
+            this.battleMode = "menu";
+            if (player.spd >= enemy.spd) {
+              this.launchAttack("player", player, enemy, skill, () => {
+                if (!this.battle) return;
+                if (this.battle.enemy.hp <= 0) this.endBattleWin();
+                else this.enemyTurn();
+              });
+            } else {
+              const originalSpecies = player.species;
+              this.enemyTurn(() => {
+                if (!this.battle) return;
+                if (this.currentMon().species !== originalSpecies) {
+                  this.battleMode = "menu";
+                  return;
+                }
+                this.launchAttack("player", this.currentMon(), this.battle.enemy, skill, () => {
+                  if (!this.battle) return;
+                  if (this.battle.enemy.hp <= 0) this.endBattleWin();
+                  else this.battleMode = "menu";
+                });
+              });
+            }
+          }
+          return;
+        }
+
+        if (this.battleMode === "switch") {
+          if (action === "up") this.switchIndex = (this.switchIndex + this.party.length - 1) % this.party.length;
+          else if (action === "down") this.switchIndex = (this.switchIndex + 1) % this.party.length;
+          else if (action === "back") this.battleMode = "menu";
+          else if (action === "ok") this.chooseSwitch();
+          return;
+        }
+      }
+
+      if (this.state === "evolution") {
+        if (this.evolution && this.evolution.done && action === "ok") {
+          this.finishEvolution();
+        }
+        return;
+      }
+
+      if (this.state === "ending") {
+        if (this.ending && this.ending.cta && action === "ok") {
+          this.resetToTitle();
+        }
+      }
+    }
+
+    resetToTitle() {
+      this.state = "title";
+      this.stateAfterDialog = "starter";
+      this.party = [];
+      this.activeIndex = 0;
+      this.starterIndex = 0;
+      this.storySeen = new Set();
+      this.defeatedBosses = new Set();
+      this.crests = [];
+      this.gameCleared = false;
+      this.stageId = "village";
+      this.playerX = 2;
+      this.playerY = 2;
+      this.dialogQueue = [];
+      this.statusMessage = "画面をタップ / Enterで開始";
+      this.statusTimer = 0;
+      this.battle = null;
+      this.attackAnim = null;
+      this.evolution = null;
+      this.pendingAfterEvolution = null;
+      this.ending = null;
+    }
+
+    handleKey(e) {
+      let action = null;
+      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") action = "left";
+      else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") action = "right";
+      else if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") action = "up";
+      else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") action = "down";
+      else if (e.key === "Enter" || e.key === " ") action = "ok";
+      else if (e.key === "Escape" || e.key === "Backspace") action = "back";
+      else if (e.key === "p" || e.key === "P") action = "party";
+      if (action) this.handleAction(action);
+    }
+
+    handlePointer(x, y) {
+      if (this.state === "title") {
+        this.handleAction("ok");
+        return;
+      }
+      if (this.state === "dialog") {
+        this.handleAction("ok");
+        return;
+      }
+      if (this.state === "starter") {
+        for (const b of this.starterButtons) {
+          if (this.inRect(x, y, b)) {
+            this.starterIndex = b.index;
+            this.handleAction("ok");
+            return;
+          }
+        }
+      }
+      for (const b of this.optionButtons) {
+        if (this.inRect(x, y, b)) {
+          if (b.action) this.handleAction(b.action);
+          if (typeof b.click === "function") b.click();
+          return;
+        }
+      }
+      for (const b of this.touchButtons) {
+        if (this.inRect(x, y, b)) {
+          this.handleAction(b.action);
+          return;
+        }
+      }
+      if (this.state === "evolution" && this.evolution && this.evolution.done) {
+        this.handleAction("ok");
+        return;
+      }
+      if (this.state === "ending" && this.ending && this.ending.cta) {
+        this.handleAction("ok");
+      }
+    }
+
+    inRect(x, y, r) {
+      return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    }
+
+    loop(now) {
+      this.update();
+      this.draw();
+      requestAnimationFrame(this.loop.bind(this));
+    }
+
+    clearButtons() {
+      this.touchButtons = [];
+      this.optionButtons = [];
+      this.starterButtons = [];
+    }
+
+    addTouchButton(action, label, x, y, w, h) {
+      this.touchButtons.push({action, label, x, y, w, h});
+    }
+
+    addOptionButton(obj) {
+      this.optionButtons.push(obj);
+    }
+
+    draw() {
+      this.clearButtons();
+      ctx.clearRect(0, 0, W, H);
+
+      if (this.state === "title") this.drawTitle();
+      else if (this.state === "starter") this.drawStarter();
+      else if (this.state === "overworld") {
+        this.drawWorld();
+        this.drawWorldUI();
+        this.drawTouchControls();
+      } else if (this.state === "dialog") {
+        if (this.party.length && this.stateAfterDialog === "battle" && this.battle) this.drawBattle();
+        else if (this.party.length) {
+          this.drawWorld();
+          this.drawWorldUI();
+          this.drawTouchControls();
+        } else {
+          this.drawTitle();
+        }
+        this.drawDialog();
+      } else if (this.state === "battle") {
+        this.drawBattle();
+        this.drawTouchControls();
+      } else if (this.state === "evolution") {
+        this.drawEvolution();
+      } else if (this.state === "ending") {
+        this.drawEnding();
+      }
+    }
+
+    drawTitle() {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "#16213a");
+      g.addColorStop(1, "#0b1020");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+
+      this.centerText("モンスターマスターへの道 DX", 60, "#ffffff", W/2, 120, "bold");
+      this.centerText("3つの紋章を集め、頂点を目指せ", 28, "#d7e1f0", W/2, 185);
+      this.centerText("画面タップ / Enter で開始", 30, "#ffd96b", W/2, 720);
+
+      const mons = [cloneMonster(STARTERS[0]), cloneMonster(STARTERS[1]), cloneMonster(STARTERS[2])];
+      const xs = [220, 480, 740];
+      for (let i = 0; i < mons.length; i++) {
+        this.drawMonster(mons[i], xs[i], 410, 1.8, false);
+      }
+    }
+
+    drawStarter() {
+      ctx.fillStyle = "#192132";
+      ctx.fillRect(0, 0, W, H);
+      this.centerText("最初の相棒を選ぼう", 48, "#ffffff", W/2, 70, "bold");
+      this.centerText("左右キー / タップで選択、OKで決定", 24, "#dce7f5", W/2, 115);
+
+      const boxW = 220, boxH = 300, gap = 30;
+      const startX = (W - (boxW * 3 + gap * 2)) / 2;
+
+      for (let i = 0; i < STARTERS.length; i++) {
+        const mon = cloneMonster(STARTERS[i]);
+        const x = startX + i * (boxW + gap);
+        const y = 180;
+        this.roundRect(x, y, boxW, boxH, 18, i === this.starterIndex ? mon.color : "#6f7d92", "#344456", 4);
+        this.drawMonster(mon, x + boxW/2, y + 105, 1.35, false);
+        this.centerText(mon.species, 34, "#ffffff", x + boxW/2, y + 210, "bold");
+        this.centerText(`属性: ${mon.element}`, 24, "#e7eef8", x + boxW/2, y + 252);
+        this.centerText(`${mon.skills[0].name} / ${mon.skills[1].name}`, 18, "#d3deee", x + boxW/2, y + 285);
+        this.starterButtons.push({index: i, x, y, w: boxW, h: boxH});
+      }
+
+      this.addTouchButton("left", "←", 130, 690, 90, 70);
+      this.addTouchButton("right", "→", 240, 690, 90, 70);
+      this.addTouchButton("ok", "OK", 700, 680, 150, 80);
+      this.drawTouchControls();
+    }
+
+    drawWorld() {
+      const stage = this.currentStage();
+      for (let y = 0; y < stage.map.length; y++) {
+        const row = stage.map[y];
+        for (let x = 0; x < row.length; x++) {
+          const ch = row[x];
+          let color = "#a8ba84";
+          if (ch === WALL) color = "#4e5662";
+          else if (ch === GRASS) color = "#4ea85c";
+          else if (ch === HEAL) color = "#ead272";
+          ctx.fillStyle = color;
+          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+          ctx.strokeStyle = "#2e3640";
+          ctx.strokeRect(x * TILE, y * TILE, TILE, TILE);
+
+          if (ch === GRASS) {
+            ctx.strokeStyle = "#2e7e3a";
+            for (let i = 0; i < 3; i++) {
+              const px = x * TILE + 8 + i * 12;
+              const sway = Math.sin(Date.now() / 120 + i + x) * 2;
+              ctx.beginPath();
+              ctx.moveTo(px, y * TILE + TILE - 7);
+              ctx.lineTo(px + 4 + sway, y * TILE + 10);
+              ctx.stroke();
+            }
+          }
+          if (ch === HEAL) {
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.arc(x * TILE + TILE/2, y * TILE + TILE/2, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "#ff6161";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(x * TILE + TILE/2, y * TILE + TILE/2, 10, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+          }
+        }
+      }
+
+      for (const p of stage.portals || []) {
+        const [x, y] = p.pos;
+        ctx.fillStyle = "#8556d8";
+        this.fillRoundRect(x * TILE + 8, y * TILE + 8, TILE - 16, TILE - 16, 10);
+      }
+
+      const boss = stage.boss;
+      if (boss && !this.defeatedBosses.has(this.stageId)) {
+        const [x, y] = boss.pos;
+        ctx.fillStyle = "#d74a63";
+        this.fillRoundRect(x * TILE + 10, y * TILE + 10, TILE - 20, TILE - 20, 8);
+      }
+
+      const px = this.playerX * TILE + TILE / 2;
+      const py = this.playerY * TILE + TILE / 2 + (this.walkAnim % 4 >= 2 ? 2 : 0);
+      this.drawPlayer(px, py);
+    }
+
+    drawWorldUI() {
+      ctx.fillStyle = "#11161d";
+      ctx.fillRect(0, UI_Y, W, H - UI_Y);
+      ctx.strokeStyle = "#6b7a8f";
+      ctx.beginPath();
+      ctx.moveTo(0, UI_Y);
+      ctx.lineTo(W, UI_Y);
+      ctx.stroke();
+
+      const mon = this.currentMon();
+      this.text(`${this.currentStage().name} | 先頭 ${mon.species} Lv${mon.level} HP ${mon.hp}/${mon.maxHp} 属性 ${mon.element}`, 14, UI_Y + 26, 24, "#f2f6fb", "bold");
+      this.text(this.objectiveText(), 14, UI_Y + 58, 18, "#ffd988");
+      this.text("スマホ操作: 十字キー / OK / もどる / 先頭", 14, UI_Y + 84, 18, "#d3dbe6");
+      this.text(`紋章: ${this.crests.length ? this.crests.join(" / ") : "なし"}`, 14, UI_Y + 108, 18, "#d3dbe6");
+
+      const msg = this.statusTimer > 0 ? this.statusMessage : "3つの紋章を集めてマスタータワーを目指そう。";
+      ctx.fillStyle = "#090d12";
+      ctx.fillRect(0, H - 36, W, 36);
+      this.text(msg, 12, H - 12, 18, "#eef4fb");
+    }
+
+    drawDialog() {
+      this.fillRoundRect(60, 430, W - 120, 150, 18, "#0f131a");
+      this.strokeRoundRect(60, 430, W - 120, 150, 18, "#7a8ca1", 3);
+      const line = this.dialogQueue.length ? this.dialogQueue[0] : "";
+      const wrapped = this.wrapText(line, 26, W - 160);
+      for (let i = 0; i < Math.min(4, wrapped.length); i++) {
+        this.text(wrapped[i], 82, 470 + i * 32, 26, "#f5f8fc");
+      }
+      this.text("タップ / OK", W - 170, 555, 20, "#ffd96b");
+    }
+
+    battleOffsets() {
+      const player = {x:0,y:0};
+      const enemy = {x:0,y:0};
+      if (this.attackAnim) {
+        const p = 1 - (this.attackAnim.timer / this.attackAnim.total);
+        const punch = Math.sin(p * Math.PI) * 18;
+        if (this.attackAnim.side === "player") {
+          player.x -= punch;
+          enemy.x += punch / 3;
+        } else {
+          enemy.x += punch;
+          player.x -= punch / 3;
+        }
+      }
+      if (this.shakeTimer > 0 && this.attackAnim) {
+        const shake = rand(-3, 3);
+        if (this.attackAnim.side === "player") {
+          enemy.x += shake;
+          enemy.y += rand(-2, 2);
+        } else {
+          player.x += shake;
+          player.y += rand(-2, 2);
+        }
+      }
+      return {player, enemy};
+    }
+
+    drawAttackEffect() {
+      if (!this.attackAnim) return;
+      const skill = this.attackAnim.skill;
+      const color = ELEM_COLOR[skill.element] || "#ffffff";
+      const p = 1 - (this.attackAnim.timer / this.attackAnim.total);
+      const sx = this.attackAnim.side === "player" ? 700 : 250;
+      const sy = this.attackAnim.side === "player" ? 385 : 190;
+      const tx = this.attackAnim.side === "player" ? 250 : 700;
+      const ty = this.attackAnim.side === "player" ? 190 : 385;
+      const cx = sx + (tx - sx) * p;
+      const cy = sy + (ty - sy) * p;
+      const radius = 12 + Math.sin(p * Math.PI) * 10;
+      for (let i = 0; i < 4; i++) {
+        const ang = p * Math.PI * 4 + i * Math.PI / 2;
+        const ox = Math.cos(ang) * 16;
+        const oy = Math.sin(ang) * 16;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(cx + ox, cy + oy, Math.max(4, radius / 2), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(4, radius - 4), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawBattle() {
+      ctx.fillStyle = this.flashTimer > 0 ? "#fff8ef" : "#e8f0f8";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#b8dcb8";
+      ctx.beginPath();
+      ctx.ellipse(250, 205, 160, 55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(720, 418, 160, 55, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      const enemy = this.battle.enemy;
+      const player = this.currentMon();
+      const off = this.battleOffsets();
+
+      this.drawMonster(enemy, 250 + off.enemy.x, 190 + off.enemy.y, 1.55, false);
+      this.drawHpBox(enemy, 40, 40, this.battle.enemyTrainer);
+      this.drawMonster(player, 700 + off.player.x, 390 + off.player.y, 1.75, true);
+      this.drawHpBox(player, 565, 255, null);
+      this.drawAttackEffect();
+
+      ctx.fillStyle = "#111820";
+      ctx.fillRect(0, 500, W, 300);
+      ctx.strokeStyle = "#64758a";
+      ctx.beginPath();
+      ctx.moveTo(0, 500);
+      ctx.lineTo(W, 500);
+      ctx.stroke();
+
+      this.optionButtons = [];
+
+      if (this.battleMode === "menu") {
+        this.text("コマンド", 40, 530, 28, "#ffffff", "bold");
+        const options = ["たたかう", "つかまえる", "こうたい", "にげる"];
+        for (let i = 0; i < options.length; i++) {
+          const y = 548 + i * 42;
+          const active = i === this.battleMenuIndex;
+          this.fillRoundRect(48, y - 24, 260, 34, 10, active ? "#3d536f" : "#263241");
+          this.text(`${i+1}. ${options[i]}`, 60, y, 24, active ? "#ffd96b" : "#edf4fb");
+          this.addOptionButton({ x:48, y:y-24, w:260, h:34, click:() => { this.battleMenuIndex = i; this.handleAction("ok"); } });
+        }
+      } else if (this.battleMode === "moves") {
+        this.text("わざ", 40, 530, 28, "#ffffff", "bold");
+        for (let i = 0; i < player.skills.length; i++) {
+          const sk = player.skills[i];
+          const y = 548 + i * 42;
+          const active = i === this.moveMenuIndex;
+          const multi = typeMultiplier(sk.element, enemy.element);
+          const hint = multi > 1 ? "↑" : (multi < 1 ? "↓" : "-");
+          this.fillRoundRect(48, y - 24, 470, 34, 10, active ? "#3d536f" : "#263241");
+          this.text(`${sk.name} 威力${sk.power} 属性:${sk.element} 相性:${hint}`, 60, y, 22, active ? "#ffd96b" : "#edf4fb");
+          this.addOptionButton({ x:48, y:y-24, w:470, h:34, click:() => { this.moveMenuIndex = i; this.handleAction("ok"); } });
+        }
+      } else if (this.battleMode === "switch") {
+        this.text("こうたい", 40, 530, 28, "#ffffff", "bold");
+        for (let i = 0; i < this.party.length; i++) {
+          const mon = this.party[i];
+          const y = 548 + i * 36;
+          const active = i === this.switchIndex;
+          this.fillRoundRect(48, y - 22, 360, 30, 10, active ? "#3d536f" : "#263241");
+          const alive = mon.hp > 0 ? "OK" : "戦闘不能";
+          this.text(`${mon.species} Lv${mon.level} ${alive}`, 60, y, 20, active ? "#ffd96b" : "#edf4fb");
+          this.addOptionButton({ x:48, y:y-22, w:360, h:30, click:() => { this.switchIndex = i; this.handleAction("ok"); } });
+        }
+      }
+
+      const msg = this.statusTimer > 0 ? this.statusMessage : "戦う、捕まえる、交代、逃げる。";
+      ctx.fillStyle = "#090d12";
+      ctx.fillRect(0, H - 36, W, 36);
+      this.text(msg, 12, H - 12, 18, "#eef4fb");
+    }
+
+    drawEvolution() {
+      const oldMon = this.evolution.old;
+      const newMon = this.evolution.newForm;
+      const timer = this.evolution.timer;
+
+      ctx.fillStyle = "#0d1022";
+      ctx.fillRect(0, 0, W, H);
+
+      for (let i = 0; i < 9; i++) {
+        const r = 50 + i * 28 + (timer * 2 % 26);
+        const alpha = Math.max(20, 180 - i * 18) / 255;
+        ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(W/2, H/2 - 30, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      const flicker = (Math.floor(timer / 6) % 2 === 0) && !this.evolution.done;
+      this.drawMonster(flicker ? oldMon : newMon, W/2, 290, 2.45 + 0.08 * Math.sin(timer / 3), false);
+
+      this.centerText("進化シークエンス", 48, "#ffffff", W/2, 72, "bold");
+      if (!this.evolution.done) {
+        this.centerText(`おや…… ${oldMon.species} の ようすが……！`, 34, "#ffe17c", W/2, 620);
+        this.centerText("光があふれている……", 28, "#dde7f4", W/2, 670);
+      } else {
+        this.centerText(`${oldMon.species} は ${newMon.species} に進化した！`, 34, "#ffe17c", W/2, 620);
+        this.centerText("タップ / OK で続く", 28, "#dde7f4", W/2, 670);
+      }
+
+      if (this.evolution.done) {
+        this.addTouchButton("ok", "OK", 405, 710, 150, 60);
+        this.drawTouchControls();
+      }
+    }
+
+    drawEnding() {
+      const t = this.ending.timer;
+
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, "#081125");
+      grad.addColorStop(1, "#111925");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      for (let x = 60; x < W; x += 140) {
+        ctx.fillStyle = "#fffde0";
+        ctx.beginPath();
+        ctx.arc(x, 80 + (x % 40), 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = "#1b2430";
+      ctx.fillRect(0, 520, W, 280);
+
+      const tx = W / 2 - 70;
+      ctx.fillStyle = "#2b3446";
+      this.fillRoundRect(tx, 210, 140, 310, 10);
+      ctx.fillStyle = "#3c4960";
+      this.fillRoundRect(tx + 30, 150, 80, 80, 8);
+      ctx.fillStyle = "#5c7097";
+      this.fillRoundRect(tx + 54, 100, 32, 60, 4);
+      ctx.fillStyle = "#ffd08a";
+      this.fillRoundRect(tx + 58, 330, 24, 60, 4);
+
+      for (const cluster of this.ending.fireworks) {
+        for (const p of cluster) {
+          if (p.life <= 0) continue;
+          const alpha = p.life / p.maxLife;
+          ctx.fillStyle = this.hexToRgba(p.color, alpha);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      for (const c of this.ending.confetti) {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(c.rot);
+        ctx.fillStyle = c.color;
+        ctx.fillRect(-c.size/2, -Math.max(4, c.size/4), c.size, Math.max(4, c.size/2));
+        ctx.restore();
+      }
+
+      if (this.party.length) {
+        this.drawPlayer(245, 483);
+        this.drawMonster(this.currentMon(), 360, 450, 1.75, false);
+      }
+
+      if (t < 170) {
+        this.centerText("マスタータワーに静寂が訪れた", 42, "#ffffff", W/2, 100, "bold");
+      } else if (t < 340) {
+        this.centerText("きみは3つの紋章を継ぎ", 42, "#ffffff", W/2, 90, "bold");
+        this.centerText("新たなモンスターマスターとなった", 42, "#ffe17c", W/2, 140, "bold");
+      } else if (t < 520) {
+        this.centerText("そして、新たな旅が始まる。", 54, "#ffffff", W/2, 100, "bold");
+        this.centerText("どんな相棒と出会い、どんな伝説を残すのか。", 28, "#dce7f5", W/2, 155);
+      } else {
+        this.centerText("ご視聴ありがとうございました！", 54, "#ffffff", W/2, 98, "bold");
+        this.centerText("チャンネル登録・高評価よろしくお願いします", 38, "#ffe17c", W/2, 150, "bold");
+        this.centerText("タップ / OK でタイトルへ", 28, "#dce7f5", W/2, 205);
+      }
+
+      const crestText = this.crests.length ? this.crests.join(" / ") : "なし";
+      this.fillRoundRect(90, 610, 780, 110, 18, "rgba(8,12,18,0.86)");
+      this.centerText("THE END", 58, "#ffe7a2", W/2, 648, "bold");
+      this.centerText(`獲得した紋章: ${crestText}`, 26, "#dce7f5", W/2, 694);
+
+      if (this.ending.cta) {
+        this.addTouchButton("ok", "OK", 405, 730, 150, 52);
+        this.drawTouchControls();
+      }
+    }
+
+    drawHpBox(mon, x, y, enemyName = null) {
+      this.fillRoundRect(x, y, 330, 110, 16, "#ffffff");
+      this.strokeRoundRect(x, y, 330, 110, 16, "#3c4a5a", 2);
+      const title = enemyName || mon.species;
+      this.text(title, x + 16, y + 24, 26, "#1f2933", "bold");
+      const sub = enemyName ? `${mon.species} Lv${mon.level} 属性 ${mon.element}` : `Lv${mon.level} 属性 ${mon.element}`;
+      this.text(sub, x + 18, y + 48, 18, "#526273");
+      const ratio = mon.hp / mon.maxHp;
+      ctx.fillStyle = "#dde4ec";
+      this.fillRoundRect(x + 18, y + 70, 250, 18, 9);
+      let hpColor = "#42c05c";
+      if (ratio <= 0.2) hpColor = "#e35c52";
+      else if (ratio <= 0.5) hpColor = "#ebb848";
+      this.fillRoundRect(x + 18, y + 70, Math.max(1, 250 * ratio), 18, 9, hpColor);
+      this.strokeRoundRect(x + 18, y + 70, 250, 18, 9, "#3c4a5a", 2);
+      this.text(`HP ${mon.hp}/${mon.maxHp}`, x + 18, y + 102, 18, "#1f2933");
+    }
+
+    drawPlayer(x, y) {
+      ctx.fillStyle = "#1d2330";
+      ctx.beginPath();
+      ctx.arc(x, y, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f4f4fc";
+      ctx.beginPath();
+      ctx.arc(x, y - 4, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#4470d2";
+      this.fillRoundRect(x - 10, y + 4, 20, 14, 6);
+    }
+
+    drawMonster(mon, x, y, scale = 1.0, backView = false) {
+      const s = scale;
+      const color = mon.color;
+      const shadow = this.shade(color, -55);
+      const glow = ctx.createRadialGradient(x, y, 10, x, y, 90 * s);
+      glow.addColorStop(0, this.hexToRgba(color, 0.20));
+      glow.addColorStop(1, this.hexToRgba(color, 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 85 * s, 65 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.beginPath();
+      ctx.ellipse(x, y + 40 * s, 52 * s, 15 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = backView ? shadow : color;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 42 * s, 31 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(x - 23 * s, y - 10 * s);
+      ctx.lineTo(x - 38 * s, y - 40 * s);
+      ctx.lineTo(x - 10 * s, y - 20 * s);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(x + 23 * s, y - 10 * s);
+      ctx.lineTo(x + 38 * s, y - 40 * s);
+      ctx.lineTo(x + 10 * s, y - 20 * s);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, 6 * s);
+      ctx.beginPath();
+      ctx.moveTo(x + 30 * s, y + 8 * s);
+      ctx.lineTo(x + 54 * s, y - 12 * s);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x + 54 * s, y - 12 * s, 7 * s, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = backView ? shadow : this.shade(color, 30);
+      ctx.beginPath();
+      ctx.ellipse(x, y + 10 * s, 18 * s, 12 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (!backView) {
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(x - 14 * s, y - 2 * s, 7 * s, 0, Math.PI * 2);
+        ctx.arc(x + 14 * s, y - 2 * s, 7 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#17191f";
+        ctx.beginPath();
+        ctx.arc(x - 14 * s, y - 2 * s, 3 * s, 0, Math.PI * 2);
+        ctx.arc(x + 14 * s, y - 2 * s, 3 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#252932";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y + 8 * s, 12 * s, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+
+        if (["ブレイズル", "ボルトラ", "サンダリス"].includes(mon.species)) {
+          ctx.strokeStyle = "#fff9d4";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(x, y - 38 * s);
+          ctx.lineTo(x, y - 54 * s);
+          ctx.stroke();
+        }
+        if (["グランリーフ", "アクアリオン", "ネプシア"].includes(mon.species)) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y - 48 * s, 5 * s, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      ctx.lineWidth = 1;
+    }
+
+    drawTouchControls() {
+      const btns = [];
+      if (this.state === "overworld") {
+        btns.push(
+          {action:"up",label:"▲",x:110,y:680,w:80,h:60},
+          {action:"left",label:"◀",x:30,y:740,w:80,h:60},
+          {action:"down",label:"▼",x:110,y:740,w:80,h:60},
+          {action:"right",label:"▶",x:190,y:740,w:80,h:60},
+          {action:"party",label:"先頭",x:690,y:680,w:120,h:56},
+          {action:"ok",label:"OK",x:830,y:700,w:100,h:60},
+        );
+      } else if (this.state === "battle") {
+        btns.push(
+          {action:"up",label:"▲",x:50,y:700,w:90,h:46},
+          {action:"down",label:"▼",x:50,y:752,w:90,h:46},
+          {action:"back",label:"戻る",x:720,y:690,w:100,h:50},
+          {action:"ok",label:"OK",x:836,y:690,w:90,h:50},
+        );
+      } else if (this.state === "starter") {
+        btns.push(
+          {action:"left",label:"◀",x:90,y:700,w:90,h:60},
+          {action:"right",label:"▶",x:200,y:700,w:90,h:60},
+          {action:"ok",label:"OK",x:800,y:700,w:100,h:60},
+        );
+      } else if (this.state === "evolution" && this.evolution && this.evolution.done) {
+        btns.push({action:"ok",label:"OK",x:405,y:720,w:150,h:56});
+      } else if (this.state === "ending" && this.ending && this.ending.cta) {
+        btns.push({action:"ok",label:"OK",x:405,y:728,w:150,h:52});
+      }
+
+      for (const b of btns) {
+        this.touchButtons.push(b);
+        this.fillRoundRect(b.x, b.y, b.w, b.h, 16, "rgba(18,28,40,0.86)");
+        this.strokeRoundRect(b.x, b.y, b.w, b.h, 16, "#9fb3ca", 2);
+        this.centerText(b.label, 28, "#ffffff", b.x + b.w/2, b.y + b.h/2 + 10, "bold");
+      }
+    }
+
+    wrapText(text, size, maxWidth) {
+      ctx.font = `${size}px Meiryo, Yu Gothic, sans-serif`;
+      const lines = [];
+      let cur = "";
+      for (const ch of text) {
+        const test = cur + ch;
+        if (ctx.measureText(test).width <= maxWidth) cur = test;
+        else {
+          lines.push(cur);
+          cur = ch;
+        }
+      }
+      if (cur) lines.push(cur);
+      return lines;
+    }
+
+    text(str, x, y, size = 24, color = "#fff", weight = "normal") {
+      ctx.fillStyle = color;
+      ctx.font = `${weight} ${size}px Meiryo, "Yu Gothic", sans-serif`;
+      ctx.fillText(str, x, y);
+    }
+
+    centerText(str, size, color, x, y, weight = "normal") {
+      ctx.fillStyle = color;
+      ctx.font = `${weight} ${size}px Meiryo, "Yu Gothic", sans-serif`;
+      const w = ctx.measureText(str).width;
+      ctx.fillText(str, x - w / 2, y);
+    }
+
+    fillRoundRect(x, y, w, h, r, color) {
+      ctx.fillStyle = color;
+      this.roundPath(x, y, w, h, r);
+      ctx.fill();
+    }
+
+    strokeRoundRect(x, y, w, h, r, color, lineWidth = 2) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      this.roundPath(x, y, w, h, r);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+
+    roundRect(x, y, w, h, r, strokeColor, fillColor, lineWidth = 2) {
+      this.fillRoundRect(x, y, w, h, r, fillColor);
+      this.strokeRoundRect(x, y, w, h, r, strokeColor, lineWidth);
+    }
+
+    roundPath(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    shade(hex, amount) {
+      const c = hex.replace("#", "");
+      const n = parseInt(c, 16);
+      let r = (n >> 16) + amount;
+      let g = ((n >> 8) & 255) + amount;
+      let b = (n & 255) + amount;
+      r = Math.max(0, Math.min(255, r));
+      g = Math.max(0, Math.min(255, g));
+      b = Math.max(0, Math.min(255, b));
+      return `rgb(${r},${g},${b})`;
+    }
+
+    hexToRgba(hex, a) {
+      const c = hex.replace("#", "");
+      const n = parseInt(c, 16);
+      const r = n >> 16;
+      const g = (n >> 8) & 255;
+      const b = n & 255;
+      return `rgba(${r},${g},${b},${a})`;
+    }
+  }
+
+  new Game();
+})();
+</script>
+</body>
+</html>
+```
